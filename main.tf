@@ -35,31 +35,37 @@ locals {
     }
   }
 
+  instances = flatten([
+    for env, details in local.config.envs : [
+      for instance_type in details.instance_types : [
+        for subnet_id in details.subnets : {
+          custom_settings = merge(
+            details.custom_settings,
+            { use_private_dns = details.custom_settings.use_private_dns }
+          )
+          instance_type = instance_type
+          subnet_id     = subnet_id
+          tags = merge(
+            {
+              Entity       = local.config.additional_settings.custom_tags.entity
+              Env          = env
+              Environment  = details.custom_settings.additional_tags.environment
+              InstanceType = instance_type
+              MultiSubnet  = length(details.subnets) > 1
+              Owner        = details.custom_settings.additional_tags.owner
+              Project      = local.config.additional_settings.custom_tags.project
+              Subnet       = subnet_id
+            }
+          )
+        }
+      ]
+    ]
+  ])
+
   transformed_config = {
-    for env, env_config in local.config.envs : env => {
-      instances = flatten([
-        for instance_type in env_config.instance_types : [
-          for subnet in env_config.subnets : {
-            custom_settings = env_config.custom_settings
-            instance_type   = instance_type
-            subnet_id       = subnet
-            tags = merge(
-              local.config.additional_settings.custom_tags,
-              env_config.custom_settings.additional_tags,
-              {
-                "Env"          = env
-                "Environment"  = env_config.custom_settings.additional_tags.environment
-                "InstanceType" = instance_type
-                "MultiSubnet"  = length(env_config.subnets) > 1
-                "Owner"        = env_config.custom_settings.additional_tags.owner
-                "Project"      = local.config.additional_settings.custom_tags.project
-                "Subnet"       = subnet
-              }
-            )
-          }
-        ]
-      ])
-      regions = [env_config.region]
+    for env in keys(local.config.envs) : env => {
+      instances = [for instance in local.instances : instance if instance.tags.Env == env]
+      regions   = [local.config.envs[env].region]
     }
   }
 }
@@ -67,4 +73,3 @@ locals {
 output "transformed_config" {
   value = local.transformed_config
 }
-
